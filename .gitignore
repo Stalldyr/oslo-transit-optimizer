@@ -175,7 +175,7 @@ cython_debug/
 
 # Test files
 src/test.py
-src/instructions.txt
+instructions.txt
 
 #Data files
 data/
