@@ -175,6 +175,7 @@ cython_debug/
 
 # Test files
 src/test.py
+src/instructions.txt
 
 #Data files
 data/
@@ -182,3 +183,4 @@ data/
 #Claudesync
 .claudesync/
 .claudeignore
+
