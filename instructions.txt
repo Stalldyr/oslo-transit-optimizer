@@ -1,0 +1,58 @@
+Tittel: Optimalisering av Kollektivtransport i Oslo - En Data Science Tilnærming
+
+Bakgrunn:
+Oslo har et omfattende kollektivnettverk, men det er alltid rom for optimalisering. Dette prosjektet tar sikte på å analysere og optimalisere én spesifikk busslinje i Oslo ved hjelp av data science og lineær programmering.
+
+Mål:
+- Analysere mønstre og flaskehalser i en valgt bussrute
+- Utvikle en optimalisert ruteplan som minimerer total reisetid
+- Visualisere resultater og forbedringspotensial
+
+Data:
+- Entur API (sanntidsdata og rutedata)
+- GTFS-data for Oslo
+- Værdata fra Meteorologisk institutt (valgfritt)
+
+Verktøy som skal brukes:
+- Python med følgende biblioteker:
+  - pandas for databehandling
+  - numpy for numeriske beregninger
+  - PuLP for lineær programmering
+  - folium for kartvisualisering
+  - matplotlib/seaborn for andre visualiseringer
+
+Oppgaver:
+
+1. Datainnhenting og Forberedelse
+   - Sett opp tilkobling til Entur API
+   - Last ned relevante GTFS-data
+   - Velg én spesifikk busslinje for analyse
+   - Strukturer dataene i et hensiktsmessig format
+
+2. Dataanalyse
+   - Beregn gjennomsnittlige reisetider mellom stopp
+   - Identifiser rushtidsperioder og forsinkelsesmønstre
+   - Analyser kapasitetsutnyttelse
+
+3. Optimalisering
+   - Sett opp et lineært programmeringsproblem som:
+     * Minimerer total reisetid
+     * Tar hensyn til kapasitetsbegrensninger
+     * Opprettholder minimum servicefrekvens
+   - Implementer og løs problemet med PuLP
+   - Sammenlign resultater med eksisterende ruteplan
+
+4. Visualisering
+   - Lag interaktivt kart over ruten
+   - Vis flaskehalser og problemområder
+   - Visualiser forbedringspotensial
+
+Leveranser:
+1. Jupyter Notebook med all kode og analyse
+2. Interaktive visualiseringer
+3. Rapport som dokumenterer funn og anbefalinger
+
+Tips:
+- Start med en mindre del av problemet først
+- Fokuser på én spesifikk busslinje (f.eks. rute 20 eller 30)
+- Test optimeringsmodellen med et forenklet datasett før full implementering
