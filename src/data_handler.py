@@ -1,10 +1,11 @@
+from data_exploration import DataExplorer
 import pandas as pd
 from datetime import datetime
 from slugify import slugify
 import os
 
 class DataHandler:
-    def __init__(self, data_dir='data'):
+    def __init__(self, data_dir='data', dt_features = []):
         """Initialize DataHandler with a data directory"""
         self.data_dir = data_dir
 
@@ -14,34 +15,97 @@ class DataHandler:
         self.processed_dir = os.path.join(project_root, 'data', 'processed')
         self.raw_dir = os.path.join(project_root, 'data', 'raw')
         self.gtfs_dir = os.path.join(self.raw_dir, 'Ruter-GTFS')
+        self.entur_dir = os.path.join(self.raw_dir, 'Entur-data')
+
+        self.dt_features = dt_features
 
     #╔════════════════════════════════════════════════════════════════════╗
     #║                         FILE HANDLING                              ║
     #╚════════════════════════════════════════════════════════════════════╝ 
 
-    def save_raw_data(self, df, route_id):
-        """Save raw data with timestamp"""
+    def get_file_name(self,route_id, start_date = "", end_date=""):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        filename = f'route_{slugify(route_id)}_{timestamp}.csv'
-        filepath = os.path.join(self.raw_dir, filename)
-        df.to_csv(filepath, index=False)
-        return filepath
+        filename = f'{slugify(route_id)}_{slugify(start_date)}-{slugify(end_date)}_{timestamp}' 
 
-    def load_and_append(self, new_df, route_id, processed_filename='processed_trips.csv'):
-        """Load existing processed data and append new data"""
-        filepath = os.path.join(self.processed_dir, processed_filename)
-        
-        # If file exists, load and append
-        if os.path.exists(filepath):
-            existing_df = pd.read_csv(filepath)
-            combined_df = pd.concat([existing_df, new_df], ignore_index=True)
-        else:
-            combined_df = new_df
-            
-        # Save combined data
-        combined_df.to_csv(filepath, index=False)
-        return combined_df
+        return filename
+
+    def save_raw_data(self, df, filename):
+        """Save raw data with timestamp"""
+        filepath = os.path.join(self.raw_dir, self.entur_dir, filename + '.csv')
+        df.to_csv(filepath, index=False)
+
+        return filepath
     
+    def save_processed_data(self, df, filename):
+        filepath = os.path.join(self.processed_dir, self.entur_dir, filename + '.csv')
+        df.to_csv(filepath,index=False)
+
+        return filepath
+    
+    def load_raw_entur_data(self, filename, datetime_convert=True):
+        filepath = os.path.join(self.raw_dir, self.entur_dir, filename)
+        loaded_df = pd.read_csv(filepath)
+
+        if datetime_convert:
+            return self.convert_date_to_datetime(loaded_df,self.dt_features)
+        else:
+            return loaded_df
+            
+    def load_processed_entur_data(self, filename, datetime_convert=True):
+        filepath = os.path.join(self.processed_dir, self.entur_dir, filename)
+        loaded_df = pd.read_csv(filepath)
+
+        if datetime_convert:
+            return self.convert_date_to_datetime(loaded_df,self.dt_features)
+        else:
+            return loaded_df
+    
+    #╔════════════════════════════════════════════════════════════════════╗
+    #║                         DATA CLEANING                              ║
+    #╚════════════════════════════════════════════════════════════════════╝ 
+ 
+    def convert_date_to_datetime(self,df,dt_features):
+        """
+            Converts date features into datetime format
+        """
+
+        try: 
+            df[dt_features] = df[dt_features].apply(pd.to_datetime)
+        except:
+            print("Selected features are not in datetime format")
+
+        return df
+
+    def remove_missing_values(self,df, cutoff = 100):
+        """
+            Removes columns with a lot of missing values
+        """
+        explorer = DataExplorer(df)
+
+        missing_values = explorer.get_missing_values()
+        by_column = missing_values['by_column']
+
+        drop_cols = []
+        for col in by_column:
+            if by_column[col]['percentage'] >= cutoff:
+                drop_cols.append(col)
+
+        return df.drop(drop_cols, axis = 1)
+    
+    def merge_duplicated_stop_times(self,df):
+        """
+        Merge arrival and departure features, as these have the same values except for endpoints: 
+            First stop has no arrival time, and final stop has no departure time. 
+
+        Returns:
+            Dataframe where true and aimed departure and arrival time has been merged
+        """
+
+        df['stopTime'] = df['departureTime'].combine_first(df['arrivalTime'])
+        df['aimedStopTime'] = df['aimedDepartureTime'].combine_first(df['aimedArrivalTime'])
+
+        return df
+            
     
     #╔════════════════════════════════════════════════════════════════════╗
     #║                         GTFS HANDLING                              ║
@@ -52,7 +116,15 @@ class DataHandler:
     '''
 
     def get_servicejourneys(self, route_id):
-        """Get service journeys for a specific route"""
+        """
+        Get service journeys for a specific route
+        
+        Args:
+            route_id (str): The route ID to find journeys of
+        
+        Returns:
+            Routes which 
+        """
         
         trips = pd.read_csv(os.path.join(self.gtfs_dir, 'trips.txt'))
 
@@ -90,32 +162,50 @@ class DataHandler:
     #║                      FEATURE ENGINEERING                           ║
     #╚════════════════════════════════════════════════════════════════════╝ 
 
+    def calculate_delay(self,df):
+        """
+            Calculates the delay between the recorded stop time versus the aimed stop time 
+        """
+
+        df['delay'] = (df['stopTime'] - df['aimedStopTime'])
+
+
+        df['delayMinutes'] = df['delay'].dt.total_seconds()/60
+
+        return df
+
     def calculate_time_between_stops(self, df):
-        """Calculate time differences between consecutive stops for each journey"""
-        # Convert time columns to datetime if they're strings
-        time_cols = ['expectedDepartureTime', 'expectedArrivalTime']
-        for col in time_cols:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col])
+        """
+        Calculates the travel time between this stop and the next one
+        """
 
         # Sort by journey ID and time
-        df = df.sort_values(['id', 'expectedDepartureTime'])
-        
+        df = df.sort_values(['operatingDate','serviceJourneyId','sequenceNr'])
+
         # Calculate time difference between consecutive stops
-        df['time_to_next_stop'] = df.groupby('id')['expectedArrivalTime'].diff().shift(-1)
+        df['timeToNextStop'] = df.groupby('serviceJourneyId')['stopTime'].diff().shift(-1)
+
         
         # Convert timedelta to minutes
-        df['minutes_to_next_stop'] = df['time_to_next_stop'].dt.total_seconds() / 60
+        df['timeToNextStopMinutes'] = df['timeToNextStop'].dt.total_seconds() / 60
         
         return df
 
     def get_average_time_between_stops(self, df):
         """Calculate average time between each pair of consecutive stops"""
+
         # Group by current and next stop
-        df['next_stop'] = df.groupby('id')['stop'].shift(-1)
+        df['nextSequenceNr'] = df.groupby('serviceJourneyId')['sequenceNr'].shift(-1)
+        df['nextStopPointName'] = df.groupby('serviceJourneyId')['stopPointName'].shift(-1)
+
+        #Corrects for the case where the current stop is an endstop
+        df.loc[df['nextSequenceNr'] != df['sequenceNr'] + 1, 'nextStopPointName'] = None
         
         # Calculate averages for stop pairs
-        avg_times = df.groupby(['stop', 'next_stop'])['minutes_to_next_stop'].agg(['mean', 'std', 'count']).reset_index()
+        avg_times = df.groupby(['stopPointName', 'nextStopPointName'])['timeToNextStopMinutes'].agg(travelTimeMean = 'mean', travelTimeStd = 'std', travelTimeCount = 'count').reset_index()
+
+        return avg_times
         
-        return avg_times[avg_times['next_stop'].notna()] 
-        
+
+
+

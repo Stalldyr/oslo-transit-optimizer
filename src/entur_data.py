@@ -2,6 +2,7 @@ import requests
 from datetime import datetime, timedelta
 from google.cloud import bigquery
 import pandas_gbq as pdgbq
+import functools
 
 class EnturAPI:
     def __init__(self, client_name="oslo-transit-optimizer"):
@@ -161,7 +162,41 @@ class EnturAPI:
             return response["data"]["line"]
         else:
             print("Error: LineID does not exist")
-    
+
+    def get_journey_info(self, journey_id: str) -> dict:
+        #UNFINISHED
+        """
+        Get information about a specific bus journey
+        
+        Args:
+            journey_id (str): The ID of the journey to query
+            
+        Returns:
+            dict: Information about the journey including its stops
+        """
+        
+        query = """
+        query GetLineInfo($journeyId: String!) {
+            serviceJourney(id: $journeyId) {
+                id
+                directionType
+                transportMode
+                line {
+                    id
+                    name
+                    }
+                activeDates
+            }
+        }
+        """
+        variables = {"journeyId": journey_id}
+        
+        response = self.execute_query(query, variables)
+
+        if response["data"]["serviceJourney"] is not None:
+            return response["data"]["serviceJourney"]
+        else:
+            print("Error: JourneyId does not exist")
 
     
     def get_realtime_journeys(self, line_id: str) -> dict:
@@ -220,17 +255,20 @@ class EnturAPI:
 class EnturSQL:
     """
     requires gcloud CLI to be installed and authenticated
+
+    https://data.entur.no/domain/public-transport-data/product/realtime_siri_et/urn:li:container:1d391ef93913233c516cbadfb190dc65
     """
     def __init__(self, project_id=None):
             self.client = bigquery.Client(project=project_id)
-            self.exceptions = ["recordedAtTime", "datedServiceJourneyId", "dataSource", "dataSourceName"]
+            self.exceptions = ["recordedAtTime", "datedServiceJourneyId", "operatorRef", "vehicleMode", "dataSource", "dataSourceName"]
             self.table_id = "`ent-data-sharing-ext-prd.realtime_siri_et.realtime_siri_et_last_recorded`"
 
-    def build_query(self, conditions, limit=None):
+    def build_query(self, conditions, limit = None, select = None):
         limit_clause = f"LIMIT {limit}" if limit else ""
+        select_clause = f"SELECT {select}" if select else f"SELECT * EXCEPT ({self._list_to_string(self.exceptions)})"
         
         query = f'''
-            SELECT * EXCEPT ({self._list_to_string(self.exceptions)})
+            {select_clause}
             FROM {self.table_id}
             WHERE {conditions}
             {limit_clause}
@@ -241,25 +279,12 @@ class EnturSQL:
     #╔════════════════════════════════════════════════════════════════════╗
     #║                          SQL REQUESTS                              ║
     #╚════════════════════════════════════════════════════════════════════╝
-    
-    def execute_query(self, query, job_config=None):
-        """
-        Execute a SQL query against the BigQuery API
-        """
         
-        query_job = self.client.query(query, job_config = job_config, project=self.client.project)
-        result = query_job.result()
-
-        return result
-    
     def query_to_dataframe(self, query):
         """
-        Execute a SQL query against the BigQuery API and return a DataFrame
+        Execute a SQL query against the BigQuery API and returns a DataFrame
         """
-        
         return pdgbq.read_gbq(query,dialect='standard', project_id=self.client.project)
-
-    
 
     #╔════════════════════════════════════════════════════════════════════╗
     #║                          SQL QUERIES                               ║
@@ -272,19 +297,63 @@ class EnturSQL:
         
         return self.query_to_dataframe(query)
     
-    def get_line_data(self, line_id, start_date, end_date, limit=10):
+    def get_data_by_lineid(self, line_id, start_date, end_date, limit=None, execute = True):
         
-        conditions = f'operatingDate BETWEEN "{start_date}" AND "{end_date}" AND lineRef = "{line_id}"'
+        conditions = f'''operatingDate BETWEEN "{start_date}"
+                    AND "{end_date}" AND lineRef = "{line_id}"
+                    '''
         query = self.build_query(conditions, limit=limit)
-        
-        return self.query_to_dataframe(query)
+
+        return self.query_to_dataframe(query) if execute else query
     
-    def get_line_data_by_timeframes(self, trip_ids:list, start_date, end_date, limit=10):
+    def get_data_by_journeyids(self, journey_ids:list, start_date, end_date, limit=None, execute = True):
         
-        conditions = f'operatingDate BETWEEN "{start_date}" AND "{end_date}" AND serviceJourneyId IN ({self._list_to_quoted_string(trip_ids)})'
+        conditions = f'''
+                    operatingDate BETWEEN "{start_date}" AND "{end_date}" 
+                    AND serviceJourneyId IN ({self._list_to_quoted_string(journey_ids)})
+                    '''
         query = self.build_query(conditions, limit=limit)
         
-        return self.query_to_dataframe(query)
+        return self.query_to_dataframe(query) if execute else query
+    
+    def get_data_by_lineid_and_timeframe(self, line_id, start_date, end_date, start_time, end_time, days_of_week = None, limit=None, journey_ids=None, execute = True):
+        
+        day_condition = ""
+        if days_of_week:
+            day_condition = f"AND dayOfTheWeek IN ({self._list_to_string(days_of_week)})"
+
+        if not journey_ids: 
+            journey_ids = self.get_journey_id_by_lineid_and_timeframe(line_id, start_date, end_date, start_time, end_time, limit=limit, execute=False)
+        
+        conditions = f'''
+                    lineRef = "{line_id}"
+                    AND serviceJourneyId IN ({journey_ids})
+                    AND operatingDate BETWEEN "{start_date}" AND "{end_date}"
+                    {day_condition}
+                    '''
+        
+        query = self.build_query(conditions, limit=limit)
+        
+        return self.query_to_dataframe(query) if execute else query
+
+    
+    def get_journey_id_by_lineid_and_timeframe(self, line_id, start_date, end_date, start_time, end_time, limit=None, execute = True):
+        """
+        Get the ID of journeys that starts its route within a specified timeframe
+        """
+
+
+        select = "serviceJourneyId"
+
+        conditions = f'''
+                    operatingDate BETWEEN "{start_date}" AND "{end_date}"
+                    AND lineRef = "{line_id}"
+                    AND sequenceNr = 1
+                    AND TIME(aimedDepartureTime) BETWEEN "{start_time}" AND "{end_time}"
+                    '''
+        query = self.build_query(conditions, limit=limit, select=select)
+
+        return self.query_to_dataframe(query) if execute else query
     
     #╔════════════════════════════════════════════════════════════════════╗
     #║                             HELPER                                 ║

@@ -1,4 +1,4 @@
-from entur_data import EnturAPI
+from entur_data import EnturAPI, EnturSQL
 from frostapi import FrostAPI
 import pandas as pd
 from datetime import datetime, timedelta
@@ -6,9 +6,14 @@ import time
 
 class DataFetcher:
     def __init__(self):
-        self.entur = EnturAPI()
+        self.enturJP = EnturAPI()
+        self.enturSQL = EnturSQL()
         self.frost = FrostAPI()
 
+        
+    #╔════════════════════════════════════════════════════════════════════╗
+    #║                      ENTUR JOURNEY PLANNER                         ║
+    #╚════════════════════════════════════════════════════════════════════╝
     
     def collect_trip_data(self, route_id: str, time_interval=600, num_samples=6):
         """
@@ -23,7 +28,7 @@ class DataFetcher:
             dataframe: Concated dataframe of all samples
         """
 
-        line_info = self.entur.get_line_info(route_id)
+        line_info = self.enturJP.get_line_info(route_id)
         if line_info is None:
             print("Failed to get line info")
             return None
@@ -33,7 +38,7 @@ class DataFetcher:
         dfs = []
         
         for _ in range(num_samples):
-            data = self.entur.get_realtime_journeys(route_id)
+            data = self.enturJP.get_realtime_journeys(route_id)
             transport_mode = data['line']['transportMode']
             if not data:
                 continue 
@@ -90,6 +95,30 @@ class DataFetcher:
         df['collectionTime'] = datetime.now()
         
         return df
+    
+    #╔════════════════════════════════════════════════════════════════════╗
+    #║                            ENTUR SQL                               ║
+    #╚════════════════════════════════════════════════════════════════════╝
+
+    def get_data_SQL(self,line_id, start_date, end_date, target_times, window_minutes = 5):
+
+        dfs = []
+        
+        for target_time in target_times:
+            target_time_dt = datetime.strptime(target_time,"%H:%M:%S")
+            start_time = (target_time_dt - timedelta(minutes=window_minutes)).strftime("%H:%M:%S")
+            end_time = (target_time_dt + timedelta(minutes=window_minutes)).strftime("%H:%M:%S")
+
+            df = self.enturSQL.get_data_by_lineid_and_timeframe(line_id, start_date,end_date, start_time, end_time)
+            
+            dfs.append(df)
+
+        return pd.concat(dfs) if dfs else None
+
+        
+    #╔════════════════════════════════════════════════════════════════════╗
+    #║                        FROST WEATHER DATA                          ║
+    #╚════════════════════════════════════════════════════════════════════╝
     
 
     def collect_weather_data(self,start_time: datetime, end_time: datetime):
