@@ -1,12 +1,20 @@
+import pandas as pd
+import json
+import os
+from datetime import datetime
+
 class DataExplorer():
     def __init__(self,df):
         self.df = df
-        self.txt_output = []
+
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        project_root = os.path.dirname(current_dir)
+        self.log_dir = os.path.join(project_root,'logs')
 
     #╔════════════════════════════════════════════════════════════════════╗
-    #║                EXPLORATION, CLEANING, & ENGINEERING                ║
+    #║                         DATA EXPLORATION                           ║
     #╚════════════════════════════════════════════════════════════════════╝
-    def full_exploration(self):
+    def full_exploration(self, output = 'dict'):
         '''Performs exploratory data analysis'''
 
         results = {
@@ -19,35 +27,38 @@ class DataExplorer():
             'sample_data': self.get_sample_data(5)
         }
 
-        return results
+        return self._handle_output(results, output)
+    
+    def custom_exploration(self, output = "dict", *args):
+        pass
 
-    def get_data_shape(self):
+    def get_data_shape(self, output = 'dict'):
         '''Provides an overview of the data set'''
 
-        shape_info = {
+        result = {
             'rows': self.df.shape[0],
             'columns': self.df.shape[1]
         }
 
-        return shape_info
+        return self._handle_output(result, output)
     
-    def get_dtypes(self):
+    def get_dtypes(self, output = 'dict'):
         '''Prints the datatype of each feature'''
 
         dtypes_dict = {col: str(dtype) for col, dtype in self.df.dtypes.items()}
 
-        dtype_info = {
+        result = {
             'column_types': dtypes_dict
         }
 
-        return dtype_info
+        return self._handle_output(result, output)
 
-    def get_missing_values(self):
+    def get_missing_values(self, output = 'dict'):
         "Checks how much of each column which contains empty values"
 
         missing = self.df.isnull().sum()
         missing_percent = missing/self.df.shape[0]*100
-        nan_dict = {
+        result = {
             'total_missing_values': int(missing.sum()),
             'percent_values_missing': float(missing.sum()/self.df.size),
             'by_column': {}
@@ -55,18 +66,18 @@ class DataExplorer():
 
         for col in self.df.columns:
             if missing[col] > 0:
-                nan_dict['by_column'][col] = {
+                result['by_column'][col] = {
                     'count': int(missing[col]),
                     'percentage': float(missing_percent[col])
                 }
 
-        return nan_dict
+        return self._handle_output(result, output)
 
 
-    def get_unique_values(self, max_values = 10):
+    def get_unique_values(self, max_values = 10, output = 'dict'):
         '''Prints the unique values of each feature'''
 
-        unique_dict = {}
+        result = {}
 
         for col in self.df.select_dtypes(['object', 'category', 'bool']):
             unique_vals = self.df[col].unique()
@@ -74,75 +85,142 @@ class DataExplorer():
 
             if count > max_values:
                 unique_vals = unique_vals[:max_values]
-                #unique_vals.append(f"... {count - max_values} more values")
+                unique_vals.append(f"... {count - max_values} more values")
             
-            unique_dict[col] = {
+            result[col] = {
                 'n_uniques': count,
                 'unique_values': unique_vals
             }
 
-        return unique_dict
+        return self._handle_output(result, output)
     
-    def get_binary_feature_ratios(self):
+    def get_binary_feature_ratios(self, output = 'dict'):
         '''Calculates the ratio of boolean values'''
 
-        bool_dict = {}
+        result = {}
 
         for col in self.df.select_dtypes("bool"):
-            bool_dict[col] = float(self.df[col].mean()*100)
+            result[col] = {
+                'ratio_true': float(self.df[col].mean()),
+                'counts': {
+                    'True': int(self.df[col].sum()),
+                    'False': int((~self.df[col]).sum())
+                }
+            }
 
 
         for col in self.df.select_dtypes(include=['object', 'category']):
             if self.df[col].nunique() == 2:
-                pass
+                counts = self.df[col].value_counts()
+                ratios = self.df[col].value_counts(normalize=True)
+                
+                result[col] = {
+                    'counts': {str(key): int(val) for key, val in counts.items()},
+                    'ratios': {str(key): float(val) for key, val in ratios.items()}
+                }
 
-        return bool_dict
+        return self._handle_output(result, output)
         
 
-    def get_numerical_statistics(self):
+    def get_numerical_statistics(self, output = 'dict'):
         '''Calculates the metrics for numerical features'''
 
-        num_stats_dict = {}
+        result = {}
 
         for col in self.df.select_dtypes("number"):
             stats = self.df[col].describe()
 
-            num_stats_dict[col] = {}
+            result[col] = {}
 
             for stat, value in stats.items():
-                num_stats_dict[col][stat] = value
+                result[col][stat] = value
 
-        return num_stats_dict
+        return self._handle_output(result, output)
     
-    def get_duplicates(self):
+    def get_duplicates(self, output = 'dict'):
         duplicated = self.df.duplicated().sum()
 
-        duplicated_dict = {
+        result = {
             'duplicated_rows': int(duplicated),
             'duplicated_percantege': float(duplicated/self.df.shape[0])
         }
 
-        return duplicated_dict
+        return self._handle_output(result, output)
     
-    def get_time_analysis(self):
-        time_dict ={}
+    def get_time_analysis(self, output = 'dict'):
+        #UNFINISHED
+
+        result ={}
 
         for col in self.df.select_dtypes('datetime'):
             print(col)
 
 
-        return time_dict
+        return self._handle_output(result, output)
 
-    def get_sample_data(self, n = 5):
+    def get_sample_data(self, n = 5, output = 'dict'):
         '''Get a sample of data from the dataframe.'''
 
         sample = self.df.head(n)
 
-        sample_dict = {
+        result = {
             'columns': list(sample.columns),
             'rows': sample.to_dict(orient='records')
         }
 
-        return sample_dict
+        return self._handle_output(result, output)
+    
+    #╔════════════════════════════════════════════════════════════════════╗
+    #║                       TRANSIT SPECIFIC                             ║
+    #╚════════════════════════════════════════════════════════════════════╝ 
+
+    def get_directon_stats(self,output):
+        result = {}
+
+        for direction in self.df['directionRef'].unique():
+            dir_df = self.df[self.df['directionRef'] == direction]
+            subset_df = dir_df[['delayMinutes','timeToNextStopMinutes']]
+
+            result[direction] = self._calculate_numerical_statistics(subset_df)
+
+        return self._handle_output(result, output)
+    
+
+
+    
+    #╔════════════════════════════════════════════════════════════════════╗
+    #║                         HELPER FUNCTIONS                           ║
+    #╚════════════════════════════════════════════════════════════════════╝
+
+    def _handle_output(self, result, output):
+
+        if output == "dict":
+            return result
+        
+        elif output == "print":
+            print(json.dumps(result, indent=2, default=str, ensure_ascii=False))
+
+        elif output == "txt":
+            time = datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+
+            log_path = os.path.join(self.log_dir, "analytics_log.txt")
+
+            with open(log_path,'a', encoding='utf-8') as file:
+                file.write(time + "\n")
+                json.dump(result, file, indent=2, default=str, ensure_ascii=False)
+
+                        
+    def _calculate_numerical_statistics(self, dataframe):
+        """Extract the core functionality from get_numerical_statistics to operate on any dataframe"""
+        result = {}
+
+        for col in dataframe.select_dtypes("number"):
+            stats = dataframe[col].describe()
+            result[col] = {}
+            for stat, value in stats.items():
+                result[col][stat] = value
+                
+        return result
+
 
 

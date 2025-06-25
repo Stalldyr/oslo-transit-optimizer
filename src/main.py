@@ -26,6 +26,8 @@ def main(route_id, start_date, end_date, target_times):
         handler.save_processed_data(processed_data,filename+"_processed")
         handler.save_processed_data(avg_times)
 
+    weather_data = fetcher.collect_weather_data(start_date, end_date, save_to_csv=True)
+
 
 def data_cleaning(df):
     #Removes empty features
@@ -40,8 +42,14 @@ def data_cleaning(df):
     return df
 
 def feature_engineering(df):
+    #Creates new features corresponding to the next stop
+    df = handler.append_next_stop(df)
+
     #Calculate delay between true stop time and aimed stop time
     df = handler.calculate_delay(df)
+
+    #
+    df = handler.calculate_delay_change(df)
 
     #Calculates average time between stops
     df = handler.calculate_time_between_stops(df)
@@ -87,9 +95,13 @@ if __name__ == "__main__":
     handler = DataHandler()
 
 
-    connection = test_connection()
+    connection = True #test_connection()
 
     if connection:
-        main(bus_route, start_date, end_date, target_times)
+        #main(bus_route, start_date, end_date, target_times)
+        
+        df = handler.load_processed_entur_data("rut-line-34_2024-01-01-2024-12-31_20250306_160847_processed.csv")
+        df = feature_engineering(df)
+        handler.save_processed_data(df,"rut-line-34_2024-01-01-2024-12-31_20250306_160847_processed.csv")
     else:
-        print("Connection with the external ... not established. broken. ")
+        print("Connection with online services not established.")

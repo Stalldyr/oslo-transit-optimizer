@@ -17,7 +17,7 @@ class FrostAPI:
             - precipitation_amount: Current precipitation in mm. Updated once a minute.
             - sum(precipitation_amount P1H): Hourly precipitation in mm
             - sum(precipitation_amount PT10M): 10-minute precipitation in mm
-            - sum(duration_of_precipitation PT1M): Checks if there has been precipitation in the last minute. Boolean value.
+            - sum(duration_of_precipitation PT1M): Precipitation iper minute (precipation intensity)
             - sum(duration_of_precipitation PT1H): Duration of precipitation last hour in seconds
             - sum(duration_of_precipitation_as_snow P1H): Number of minutes with snow the last hour
             - sum(duration_of_precipitation_as_rain P1H): Number of minutes with rain the last hour
@@ -75,7 +75,7 @@ class FrostAPI:
         Returns:
             dict: Response from the API
         """
-
+        
         try:
             response = requests.get(self.BASE_URL + url, params=parameters,  auth=(self.client_id,''))
             response.raise_for_status()

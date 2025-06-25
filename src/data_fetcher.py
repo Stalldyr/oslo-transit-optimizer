@@ -1,3 +1,4 @@
+from data_handler import DataHandler
 from entur_data import EnturAPI, EnturSQL
 from frostapi import FrostAPI
 import pandas as pd
@@ -101,6 +102,15 @@ class DataFetcher:
     #╚════════════════════════════════════════════════════════════════════╝
 
     def get_data_SQL(self,line_id, start_date, end_date, target_times, window_minutes = 5):
+        """
+        Gets dataframe from SQL
+        
+        Args:
+            line_id: 
+            start_date: Format: YYYY-MM-DD
+
+        """
+
 
         dfs = []
         
@@ -114,6 +124,9 @@ class DataFetcher:
             dfs.append(df)
 
         return pd.concat(dfs) if dfs else None
+    
+
+    
 
         
     #╔════════════════════════════════════════════════════════════════════╗
@@ -121,30 +134,89 @@ class DataFetcher:
     #╚════════════════════════════════════════════════════════════════════╝
     
 
-    def collect_weather_data(self,start_time: datetime, end_time: datetime):
+    def collect_weather_data(self,start_date, end_date, chunk_size = 15, elements_list = None, source_list = None, save_to_csv = True):
         """Fetch current weather data"""
 
-        time_format = "%Y-%m-%dT%H:%M:%S"
-        time_range = f"{start_time.strftime(time_format)}/{end_time.strftime(time_format)}"
+        if elements_list is None:
+            elements_list = [
+                'air_temperature', 
+                'sum(precipitation_amount PT10M)', 
+                'relative_humidity', 
+                'wind_speed', 
+                'surface_snow_thickness'
+            ]
 
-        parameters = {
-            'sources': 'SN18700',
-            'elements': 'air_temperature,precipitation_amount , relative_humidity, wind_speed, surface_snow_thickness',
-            'referencetime': time_range,
-        }
-        
-        weather_data = self.frost.get_weather_data(parameters)
-        
-        if weather_data and 'data' in weather_data:
-            return weather_data['data']
-        return None
+        if source_list is None:
+            source_list = ['SN18700']
 
 
-    def get_weather_dataframe(self, data):
+        sources = ','.join(source_list)
+
+
+        for element in elements_list:
+            chunk_dfs = []
+
+            start = datetime.strptime(start_date, '%Y-%m-%d')
+            end = datetime.strptime(end_date, '%Y-%m-%d')
+            
+            current_start = start
+            while current_start <= end:
+                current_end = min(current_start + timedelta(days=chunk_size-1), end)
+
+                time_range = f"{current_start.strftime('%Y-%m-%d')}/{current_end.strftime('%Y-%m-%d')}"
+
+                parameters = {
+                    'sources': sources,
+                    'elements': element,
+                    'referencetime': time_range,
+                }
+                
+                chunk_data = self.frost.get_weather_data(parameters)
+                
+                if chunk_data:
+                    chunk_df = self.frost_data_to_df(chunk_data)
+                    chunk_dfs.append(chunk_df)
+
+                else:
+                    print("Failed to fetch data for chunk:", time_range)
+
+                current_start = current_end + timedelta(days=1)
+
+
+            element_df = pd.concat(chunk_dfs) if chunk_dfs else None
+
+            if element_df is not None and save_to_csv == True:
+                DataHandler().save_raw_frost_data(element_df, f"{element}_{start_date}_{end_date}")
+                print(f"Saved {element} data to CSV")
+                
+        return pd.concat(chunk_dfs) if chunk_dfs else None
+
+
+    def frost_data_to_df(self, data):
         """
-        Convert weather data to DataFrame
-        UNFINISHED
+        Convert collected data to DataFrame
+        
+        Args:
+            data (list): List of dictionaries containing weather data
+            
+        Returns:
+            dataframe: DataFrame containing weather data
         """
-        df = pd.DataFrame()
-        for entry in data:
-            df[entry['elementId']] = entry['value']
+        
+        rows = []
+        
+
+        for item in data['data']:
+            source_id = item['sourceId']
+            reference_time = item['referenceTime']
+
+            for obs in item['observations']:
+                rows.append({
+                    'sourceId': source_id,
+                    'referenceTime': reference_time,
+                    obs['elementId']: obs['value'],
+                    'timeOffset': obs['timeOffset'],
+                    'timeResolution': obs['timeResolution']
+                })
+                
+        return pd.DataFrame.from_dict(rows)

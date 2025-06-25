@@ -263,6 +263,10 @@ class EnturSQL:
             self.exceptions = ["recordedAtTime", "datedServiceJourneyId", "operatorRef", "vehicleMode", "dataSource", "dataSourceName"]
             self.table_id = "`ent-data-sharing-ext-prd.realtime_siri_et.realtime_siri_et_last_recorded`"
 
+    #╔════════════════════════════════════════════════════════════════════╗
+    #║                          SQL REQUESTS                              ║
+    #╚════════════════════════════════════════════════════════════════════╝
+        
     def build_query(self, conditions, limit = None, select = None):
         limit_clause = f"LIMIT {limit}" if limit else ""
         select_clause = f"SELECT {select}" if select else f"SELECT * EXCEPT ({self._list_to_string(self.exceptions)})"
@@ -275,11 +279,6 @@ class EnturSQL:
             '''
         return query
 
-    
-    #╔════════════════════════════════════════════════════════════════════╗
-    #║                          SQL REQUESTS                              ║
-    #╚════════════════════════════════════════════════════════════════════╝
-        
     def query_to_dataframe(self, query):
         """
         Execute a SQL query against the BigQuery API and returns a DataFrame
@@ -294,13 +293,20 @@ class EnturSQL:
         
         conditions = 'operatingDate = "2024-08-10" AND lineRef = "RUT:Line:34"'
         query = self.build_query(conditions, limit=10)
-        
-        return self.query_to_dataframe(query)
+
+        return query is not None
+    
+
+    def custom_query(self,conditions,select=None, limit=None, execute = True):
+        query = self.build_query(conditions,select=select, limit=limit)
+
+        return self.query_to_dataframe(query) if execute else query
     
     def get_data_by_lineid(self, line_id, start_date, end_date, limit=None, execute = True):
         
-        conditions = f'''operatingDate BETWEEN "{start_date}"
-                    AND "{end_date}" AND lineRef = "{line_id}"
+        conditions = f'''
+                    operatingDate BETWEEN "{start_date}"AND "{end_date}" 
+                    AND lineRef = "{line_id}"
                     '''
         query = self.build_query(conditions, limit=limit)
 
@@ -364,3 +370,10 @@ class EnturSQL:
     
     def _list_to_quoted_string(self, lst):
         return ", ".join([f"'{item}'" for item in lst])
+    
+    def _string_to_quoted_string(self, str):
+        """
+        Placeholder.
+        In a custom query, a strings needs to be between quotation marks.
+        Need to implement a function that automatically corrects for that. 
+        """
